@@ -1,0 +1,7 @@
+chromadb==0.3.10
+numpy==1.24.2
+openai==0.27.0
+pandas==1.5.3
+python-dotenv==0.21.1
+tenacity==8.2.2
+tiktoken==0.2.0
