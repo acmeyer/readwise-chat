@@ -81,6 +81,8 @@ def load_dataset_for_embeddings(filepath: str = None, df: pd.DataFrame = None):
         "Highlight: " + df['highlight'].str.strip().fillna('') +
         (("; Note: " + df['note'].str.strip()) if df['note'].notna().all() else '')
     )
+    # Convert id to string
+    df['id'] = df['id'].apply(str)
     return df
 
 def save_embeddings(df: pd.DataFrame, output_path: str = 'data/embeddings/book_notes_w_embeddings.csv'):
@@ -89,7 +91,7 @@ def save_embeddings(df: pd.DataFrame, output_path: str = 'data/embeddings/book_n
         # Read in the existing file
         existing_df = pd.read_csv(output_path)
         # Append the new data to the existing data
-        df = existing_df.append(df, ignore_index=True)
+        df = pd.concat([existing_df, df], ignore_index=True)
         df.to_csv(f'{output_path}', index=False)
         print(f"Saved embeddings to {output_path}.")
     else:  

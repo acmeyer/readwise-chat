@@ -111,12 +111,12 @@ def create_db(added_data: pd.DataFrame):
     conn.commit()
     conn.close()
 
-def get_most_recently_added_data_from_db(since: str = 'now, start of day'):
+def get_most_recently_added_data_from_db(since: str):
     # Connect to the database
     conn = sqlite3.connect("data/highlights.db")
     c = conn.cursor()
     # Get the most recently added data
-    c.execute(f"SELECT id, highlight, book, author, note, location, location_type FROM highlights WHERE created_at >= date({since})")
+    c.execute(f"SELECT id, highlight, book, author, note, location, location_type FROM highlights WHERE created_at >= '{since}'")
     data = c.fetchall()
     df = pd.DataFrame(data, columns=['id', 'highlight', 'book', 'author', 'note', 'location', 'location_type'])
     conn.close()
@@ -144,7 +144,7 @@ if __name__ == "__main__":
     current_time = new_filepath.split('_')[-1].split('.')[0]
     timestamp = int(current_time)
     dt = datetime.datetime.fromtimestamp(timestamp / 1000)
-    date = dt.strftime('%Y-%m-%d')
+    date = dt.strftime('%Y-%m-%d %H:%M:%S')
     df = get_most_recently_added_data_from_db(since=date)
     df = load_dataset_for_embeddings(df=df)
     df = get_embeddings(df)
