@@ -90,10 +90,15 @@ if __name__ == "__main__":
         answer = stream_gpt3_response(prompt, conversation_messages)
         print(f'\nBot: ')
         # iterate through the stream of events
+        complete_answer = []
         for event in answer:
             event_delta = event['choices'][0]['delta'] # extract the text
             try:
-                print(event_delta['content'], end='')
+                answer_text = event_delta['content']
+                print(answer_text, end='')
+                complete_answer.append(answer_text)
             except KeyError:
                 pass
         print('\n')
+        complete_answer = ''.join(complete_answer)
+        conversation_messages.append(Message(role="assistant", content=complete_answer))
