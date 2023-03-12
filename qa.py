@@ -12,6 +12,21 @@ logging.basicConfig(filename='logs/qa.log', level=logging.INFO)
 CHAT_MODEL = "gpt-3.5-turbo"
 MODEL_TEMPERATURE = 0.0
 
+def stream_gpt3_response(prompt: str, messages: list[Message]):
+    """Returns ChatGPT-3's response to the given prompt."""
+    system_message = [{"role": "system", "content": prompt}]
+    if len(messages) > 0:
+        message_dicts = [asdict(message) for message in messages]
+        conversation_messages = system_message + message_dicts
+    else:
+        conversation_messages = system_message
+    return openai.ChatCompletion.create(
+        model=CHAT_MODEL,
+        messages=conversation_messages,
+        temperature=MODEL_TEMPERATURE,
+        stream=True
+    )
+
 def ask_gpt3_chat(prompt: str, messages: list[Message]):
     """Returns ChatGPT-3's response to the given prompt."""
     system_message = [{"role": "system", "content": prompt}]
@@ -72,9 +87,13 @@ if __name__ == "__main__":
         prompt = setup_prompt(relevant_docs)
         conversation_messages.append(Message(role="user", content=user_input))
         user_messages.append(Message(role="user", content=user_input))
-        updated_embeddings_query = "\n".join([message.render().replace('user: ', '') for message in user_messages])
-        relevant_docs = query_embeddings_chroma(query=updated_embeddings_query, n_results=10)
-        prompt = setup_prompt(relevant_docs)
-        answer = ask_gpt3_chat(prompt, conversation_messages)
-        conversation_messages.append(Message(role="assistant", content=answer))
-        print(f'\nBot: {answer}\n')
+        answer = stream_gpt3_response(prompt, conversation_messages)
+        print(f'\nBot: ')
+        # iterate through the stream of events
+        for event in answer:
+            event_delta = event['choices'][0]['delta'] # extract the text
+            try:
+                print(event_delta['content'], end='')
+            except KeyError:
+                pass
+        print('\n')
