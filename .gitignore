@@ -4,3 +4,4 @@ logs/
 *.log
 data/
 .chroma/
+.mypy_cache/

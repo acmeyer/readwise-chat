@@ -1,11 +1,11 @@
 import os
 import pandas as pd
-import openai
+from openai import OpenAI
+client = OpenAI()
 import tiktoken
 import chromadb
 from chromadb.utils import embedding_functions
-from chromadb.config import Settings
-chroma_client = chromadb.Client(Settings(chroma_db_impl="duckdb+parquet", persist_directory="data/chroma"))
+chroma_client = chromadb.PersistentClient(path="data/chroma")
 import pandas as pd
 import numpy as np
 from typing import Iterator
@@ -14,9 +14,10 @@ from tenacity import retry, wait_random_exponential, stop_after_attempt
 from dotenv import load_dotenv
 load_dotenv()
 
-EMBEDDINGS_MODEL = "text-embedding-ada-002"
-OPENAI_EMBEDDING_ENCODING = "cl100k_base" # this the encoding for text-embedding-ada-002
-MAX_EMBEDDING_TOKENS = 8191  # the maximum for text-embedding-ada-002 is 8191
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+EMBEDDINGS_MODEL = "text-embedding-3-small"
+OPENAI_EMBEDDING_ENCODING = "cl100k_base" # this the encoding for text-embedding-3-small
+MAX_EMBEDDING_TOKENS = 8191  # the maximum for text-embedding-3-small is 8191
 EMBEDDINGS_INDEX_NAME = "book-notes"
 BATCH_SIZE = 100
 
@@ -24,7 +25,7 @@ BATCH_SIZE = 100
 class BatchGenerator:
     def __init__(self, batch_size: int = 10) -> None:
         self.batch_size = batch_size
-    
+
     # Makes chunks out of an input DataFrame
     def to_batches(self, df: pd.DataFrame) -> Iterator[pd.DataFrame]:
         splits = self.splits_num(df.shape[0])
@@ -37,13 +38,17 @@ class BatchGenerator:
     # Determines how many chunks DataFrame contains
     def splits_num(self, elements: int) -> int:
         return round(elements / self.batch_size)
-    
+
     __call__ = to_batches
 
 @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(6))
 def get_embedding(text: str, model=EMBEDDINGS_MODEL) -> list[float]:
     text = text.replace("\n", " ") # OpenAI says removing newlines leads to better performance
-    return openai.Embedding.create(input=[text], model=model)["data"][0]["embedding"]
+    response = client.embeddings.create(
+        input=text,
+        model=model
+    )
+    return response.data[0].embedding
 
 def get_embeddings(df: pd.DataFrame):
     print('Getting embeddings...')
@@ -69,21 +74,23 @@ def load_embeddings(filepath: str = 'data/embeddings/book_notes_w_embeddings.csv
     df['id'] = df['id'].apply(str)
     return df
 
-def load_dataset_for_embeddings(filepath: str = None, df: pd.DataFrame = None):
-    """Load the dataset from a CSV file."""
-    if filepath is not None:
-        df = pd.read_csv(filepath)
-    # Keep only the columns we need
-    df = df[['id', 'highlight', 'book', 'author', 'note', 'location', 'location_type']]
-    df['combined'] = (
-        "Title: " + df['book'].str.strip().fillna('') + "; " +
-        "Author: " + df['author'].str.strip().fillna('') + "; " +
-        "Highlight: " + df['highlight'].str.strip().fillna('') +
-        (("; Note: " + df['note'].str.strip()) if df['note'].notna().all() else '')
-    )
-    # Convert id to string
-    df['id'] = df['id'].apply(str)
-    return df
+def load_dataset_for_embeddings(df: pd.DataFrame):
+    """Configure the dataset for embeddings."""
+    try:
+        # Keep only the columns we need
+        df = df[['id', 'highlight', 'book', 'author', 'note', 'location', 'location_type']]
+        df['combined'] = (
+            "Title: " + df['book'].str.strip().fillna('') + "; " +
+            "Author: " + df['author'].str.strip().fillna('') + "; " +
+            "Highlight: " + df['highlight'].str.strip().fillna('') +
+            (("; Note: " + df['note'].str.strip()) if df['note'].notna().all() else '')
+        )
+        # Convert id to string
+        df['id'] = df['id'].apply(str)
+        return df
+    except:
+        print("Error configuring dataset for embeddings.")
+        return df
 
 def save_embeddings(df: pd.DataFrame, output_path: str = 'data/embeddings/book_notes_w_embeddings.csv'):
     """Save the dataset with the embeddings to a CSV file."""
@@ -101,9 +108,13 @@ def save_embeddings(df: pd.DataFrame, output_path: str = 'data/embeddings/book_n
 # Using chromadb for embeddings search
 def add_embeddings_to_chroma(df: pd.DataFrame):
     print(f'Adding {len(df)} embeddings to chromadb...')
+    ef = embedding_functions.OpenAIEmbeddingFunction(
+        api_key=OPENAI_API_KEY,
+        model_name=EMBEDDINGS_MODEL
+    )
     collection = chroma_client.get_or_create_collection(
         name=EMBEDDINGS_INDEX_NAME, 
-        embedding_function=embedding_functions.OpenAIEmbeddingFunction(os.getenv('OPENAI_API_KEY'))
+        embedding_function=ef
     )
 
     # Create a batch generator
@@ -118,9 +129,13 @@ def add_embeddings_to_chroma(df: pd.DataFrame):
 
 def query_embeddings_chroma(query: str, n_results: int = 5):
     query_embedding = get_embedding(query)
+    ef = embedding_functions.OpenAIEmbeddingFunction(
+        api_key=OPENAI_API_KEY,
+        model_name=EMBEDDINGS_MODEL
+    )
     collection = chroma_client.get_collection(
         name=EMBEDDINGS_INDEX_NAME, 
-        embedding_function=embedding_functions.OpenAIEmbeddingFunction(os.getenv('OPENAI_API_KEY'))
+        embedding_function=ef
     )
     results = collection.query(
         query_embeddings=[query_embedding],

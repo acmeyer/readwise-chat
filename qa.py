@@ -1,46 +1,46 @@
-import openai
+from openai import OpenAI
+client = OpenAI()
 import pandas as pd
 import sqlite3
 from dataclasses import asdict
-from embeddings import (
-    query_embeddings_chroma,
-)
+from embeddings import (query_embeddings_chroma)
 from models import Message
 import logging
 logging.basicConfig(filename='logs/qa.log', level=logging.INFO)
 
-CHAT_MODEL = "gpt-3.5-turbo"
+CHAT_MODEL = "gpt-4o"
 MODEL_TEMPERATURE = 0.0
 
-def stream_gpt3_response(prompt: str, messages: list[Message]):
-    """Returns ChatGPT-3's response to the given prompt."""
+def stream_gpt_response(prompt: str, messages: list[Message]):
+    """Returns ChatGPT's response to the given prompt."""
     system_message = [{"role": "system", "content": prompt}]
     if len(messages) > 0:
         message_dicts = [asdict(message) for message in messages]
         conversation_messages = system_message + message_dicts
     else:
         conversation_messages = system_message
-    return openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model=CHAT_MODEL,
         messages=conversation_messages,
         temperature=MODEL_TEMPERATURE,
         stream=True
     )
+    return response
 
-def ask_gpt3_chat(prompt: str, messages: list[Message]):
-    """Returns ChatGPT-3's response to the given prompt."""
+def ask_gpt_chat(prompt: str, messages: list[Message]):
+    """Returns ChatGPT's response to the given prompt."""
     system_message = [{"role": "system", "content": prompt}]
     if len(messages) > 0:
         message_dicts = [asdict(message) for message in messages]
         conversation_messages = system_message + message_dicts
     else:
         conversation_messages = system_message
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model=CHAT_MODEL,
         messages=conversation_messages,
         temperature=MODEL_TEMPERATURE
     )
-    return response.choices[0]['message']['content'].strip()
+    return response.choices[0].message.content
 
 def get_data_for_ids(ids: list) -> pd.DataFrame:
     # Connect to the database
@@ -87,18 +87,18 @@ if __name__ == "__main__":
         prompt = setup_prompt(relevant_docs)
         conversation_messages.append(Message(role="user", content=user_input))
         user_messages.append(Message(role="user", content=user_input))
-        answer = stream_gpt3_response(prompt, conversation_messages)
+        answer = stream_gpt_response(prompt, conversation_messages)
         print(f'\nBot: ')
-        # iterate through the stream of events
-        complete_answer = []
-        for event in answer:
-            event_delta = event['choices'][0]['delta'] # extract the text
+        complete_answer: list[str] = []
+        for chunk in answer:
             try:
-                answer_text = event_delta['content']
+                event_delta = chunk.choices[0].delta
+                answer_text = event_delta.content or ""
                 print(answer_text, end='')
                 complete_answer.append(answer_text)
             except KeyError:
                 pass
+
         print('\n')
-        complete_answer = ''.join(complete_answer)
-        conversation_messages.append(Message(role="assistant", content=complete_answer))
+        complete_answer_string = ''.join(complete_answer)
+        conversation_messages.append(Message(role="assistant", content=complete_answer_string))
